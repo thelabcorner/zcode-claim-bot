@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: [self-hosted, homelab]
+    if: github.actor == github.repository_owner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Runtime versions
+        run: node --version
+
+      - name: Syntax check all modules
+        run: |
+          for f in src/*.mjs; do node --check "$f" || exit 1; done
+          echo "checked $(ls src/*.mjs | wc -l) modules"
+
+      - name: Config resolves without throwing
+        run: node -e "import('./src/config.mjs').then(()=>console.log('config ok'))"
+
+      - name: No committed secrets
+        run: |
+          if grep -rIEq '8901932867|AAE61OIb71BLaXQIOeVep2v27HqWREMrd2o' --exclude-dir=.git .; then
+            echo "::error::telegram token found in tracked files"
+            exit 1
+          fi
+          echo "clean"

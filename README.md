@@ -1,67 +1,136 @@
+<div align="center">
+
 # ZCode Auto-Claim Bot
 
-An unattended watcher for Z.ai / ZCode free-token drops. It polls the same offer surface the
-desktop app uses, and the instant a new claimable plan appears it claims it **on your behalf,
-using your own logged-in account**, then pings you on Telegram.
+**Unattended claimer for Z.ai / ZCode free-token drops, on your own account, with Telegram alerts.**
 
-Read the [Terms of Service warning](#terms-of-service-warning) before you run this.
+[![ci](https://github.com/thelabcorner/zcode-claim-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/thelabcorner/zcode-claim-bot/actions/workflows/ci.yml)
+[![license: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](LICENSE)
+[![platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows&logoColor=white)](https://github.com/thelabcorner/zcode-claim-bot)
+[![runtime: Node 18+](https://img.shields.io/badge/node-%E2%89%A518-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![dependencies: 0](https://img.shields.io/badge/dependencies-0-44cc11.svg)](package.json)
+[![self-hosted CI](https://img.shields.io/badge/CI-self--hosted%20homelab-orange)](.github/workflows/ci.yml)
 
-```
-   Z.ai offer surface                    your machine                         you
-   ────────────────────                  ────────────                         ───
-   GET  billing/preview  ───── poll ──▶  detect new plan_id                   
-                                          │                                   
-                                          ├─ new / changed / re-listed?        
-                                          │        │                           
-                                          │        ▼                           
-   Aliyun Captcha (traceless) ◀── CDP ─── ZCode renderer mints param           
-                                          │        │                           
-   POST billing/claim ────────────────────┘        │                           
-                                                   ▼                           
-                                          Telegram  ────────────────────────▶  ✅ / ⏳ / ❌
-```
+<br />
+
+> [!WARNING]
+> **This almost certainly violates the Z.ai / ZCode terms of service, and using it may get your account suspended or permanently banned.**
+> It automates a first-come-first-served promotion and works around an anti-bot captcha.
+> You accept that risk by running it. Read the [full reasoning](#terms-of-service-warning) first.
+
+</div>
+
+---
+
+## Table of contents
+
+- [What it does](#what-it-does)
+- [Terms of Service warning](#terms-of-service-warning)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Architecture](#architecture)
+- [Detection vs claiming](#detection-vs-claiming)
+- [Reverse engineering notes](#reverse-engineering-notes)
+- [Configuration](#configuration)
+- [Security](#security)
+- [Known limits](#known-limits)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## What it does
+
+Z.ai periodically releases free inference-token packs ("Global Build", "Weekend Build") that
+are claimed from inside the ZCode desktop app. Supplies are tiny and the packs are gone in
+minutes, often before the app's cached offer card even refreshes.
+
+This bot polls Z.ai's own offer endpoint directly, and the moment a new claimable plan appears
+it claims it for you, using your real logged-in account, then messages you on Telegram.
+
+| | |
+|---|---|
+| ⚡ **Detection** | ~2 min during known drop windows, 30 min otherwise |
+| 🔐 **Auth** | your own ZCode JWT, read fresh every cycle |
+| 🧩 **Captcha** | minted by the real ZCode renderer over CDP (traceless) |
+| 📱 **Alerts** | new offer, wave change, claimed, exhausted, fault |
+| 🛡 **Budgets** | 24 attempts/plan/day, 60 global/day, progressive backoff |
+| 📦 **Deps** | zero npm packages, Node built-ins only |
 
 ---
 
 ## Terms of Service warning
 
-**This probably violates the Z.ai / ZCode terms of service, and using it may get your account
-suspended or banned. You accept that risk by running it.**
+This is not boilerplate. It is the honest risk assessment, and you should weigh it.
 
-Why it is risky, stated plainly:
+**Why this is risky:**
 
-- The drops are **first come, first served** promotions with a hard cap on packs. Automating
-  a race for a scarce promotional resource is materially different from automating something
-  you already own.
-- Z.ai explicitly attaches an **Aliyun Captcha** challenge to the claim endpoint. A captcha is
-  a signal that the operator does not want automated clients on that endpoint. This bot works
-  around it not by breaking the captcha, but by borrowing a genuine one from the real app.
-- We send traffic that is deliberately shaped to look like the desktop client (matching
-  headers, jittered timing). Deliberately evading detection is a worse position to be in than
-  merely automating.
-- The bot claims **at most one pack per offer**, on **one account**, and never creates
-  accounts, never shares claims, and never resells anything. That restraint is deliberate. It
-  does not make the tool compliant, it only keeps the blast radius small.
+1. **Scarce promotional resource.** The drops are first-come-first-served with a hard pack
+   cap. Automating a race for something scarce, that the operator intends as a goodwill
+   gesture, is materially different from automating your own data.
+2. **There is a captcha, and we route around it.** Z.ai attaches an Aliyun Captcha challenge
+   to the claim endpoint. A captcha is an explicit signal the operator does not want automated
+   clients there. This tool does not break the captcha; it borrows a genuine one from the real
+   app. That is circumvention in spirit even though no challenge is defeated.
+3. **Traffic is shaped to look like the client.** Matching headers, jittered timing, and
+   single-use tokens are deliberate anti-detection measures, which is a worse position to
+   defend than simply automating loudly.
 
-If a formal permission or an official API exists for your use case, use that instead. If you
-are uncomfortable with the risk, delete the directory.
+**What this tool deliberately does not do:**
+
+- claims at most **one pack per offer**, on **one account**
+- no account creation, no multi-accounting, no rotating identities
+- no resale, no token transfer, no sharing of claims
+- no attempts to defeat, replay, or forge captcha challenges
+
+That restraint keeps the blast radius small. **It does not make the tool compliant.**
+
+If your use case has official support or an official API, use that. If you are not comfortable
+with the risk, delete the directory now.
+
+---
+
+## Quick start
+
+Requires Windows 10/11, Node 18+, and a ZCode desktop install that you have signed into at
+least once (so the credential store exists).
+
+```powershell
+git clone https://github.com/thelabcorner/zcode-claim-bot.git
+cd zcode-claim-bot
+copy .env.example .env
+# fill in TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+node src\run-once.mjs     # single pass, safe to try
+node src\index.mjs        # continuous
+```
+
+### Telegram bot
+
+1. Message [@BotFather](https://t.me/BotFather), `/newbot`, copy the API token.
+2. Send your new bot any message (this is required, or `getUpdates` is empty).
+3. Get your chat id: `https://api.telegram.org/bot<TOKEN>/getUpdates`
+4. Put both values in `.env`.
+
+### Run at login
+
+```powershell
+schtasks /Create /F /TN "ZCodeClaimBot" /SC ONLOGON /RL HIGHEST /TR '"powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "'"$(Resolve-Path .\start-bot.ps1)"'"'
+```
 
 ---
 
 ## How it works
 
-### 1. Detection (read only, no side effects)
+### 1. Detection (read-only, no side effects)
 
-Every poll issues one `GET`:
+Each poll issues one `GET` against the same endpoint the desktop app uses for its card:
 
 ```
 GET https://zcode.z.ai/api/v1/zcode-plan/billing/preview
       ?app_version=3.10.2&platform=win32-x64
 Authorization: Bearer <your ZCode JWT>
-X-Device-Mid, X-Request-Id, X-ZCode-App-Version, X-Platform, ... (app parity headers)
+X-Device-Mid / X-Request-Id / X-ZCode-App-Version / X-Platform  (app parity headers)
 ```
-
-which returns the currently listed offers:
 
 ```json
 {"code":0,"data":{"plans":[{
@@ -77,57 +146,53 @@ which returns the currently listed offers:
 }]}}
 ```
 
-This is exactly the call the desktop app makes for the claimable card. Because we call it
-directly we have none of the app's caching problems, which is why users are told "don't see
-it? restart the app". A bot never needs restarting.
+Because we hit the API directly instead of the app's cached view, the "don't see it? restart
+the app" problem disappears. A bot never needs restarting.
 
-### 2. The captcha problem, and the solution
+### 2. The captcha problem
 
-The claim endpoint is **not** open. Probing it directly:
+The claim endpoint is not open. Probing it directly:
 
 | request | response |
 |---|---|
 | no captcha header | `400 {"code":3007,"msg":"captcha verify failed"}` |
-| empty captcha header | `400 {"code":3007,"msg":"captcha verify failed"}` |
-| garbage captcha header | `400 3007`, then `429` from repeated bad attempts |
-| **valid captcha param** | passes through to the real check, e.g. `1005 quota exhausted` |
+| empty captcha header | `400 3007` |
+| garbage captcha header | `400 3007`, then `429` after repeats |
+| **valid captcha param** | passes, reaching the real check (e.g. `1005 quota exhausted`) |
 
-So a valid `X-Aliyun-Captcha-Verify-Param` is mandatory. That param is a signed blob produced
-by the Aliyun Captcha 2.0 JavaScript SDK, which needs a real browser environment:
+The required `X-Aliyun-Captcha-Verify-Param` is a signed blob from the Aliyun Captcha 2.0 JS
+SDK, which needs a real browser environment:
 
 ```
-eyJjZXJ0aWZ5SWQiOi...  →  {"certifyId":"...","sceneId":"11xygtvd","isSign":true,"securityToken":"..."}
+eyJjZXJ0aWZ5SWQiOi...  ->  {"certifyId":"...","sceneId":"11xygtvd","isSign":true,"securityToken":"..."}
 ```
 
-Synthesising it in Node is not feasible, and running the SDK in a headless browser is a coin
-flip because the risk engine grades the environment.
+Synthesising it in Node is not feasible, and running the SDK headless is a coin flip because
+the risk engine grades the environment.
 
 **Solution: ask the real app for one.** ZCode is Electron, so we launch (or attach to) it with
-`--remote-debugging-port`, then speak the Chrome DevTools Protocol to its renderer and run the
-identical code path the Claim button uses:
+`--remote-debugging-port`, then drive its renderer over the Chrome DevTools Protocol through
+the identical code path the Claim button uses:
 
 ```js
 window.AliyunCaptchaConfig = { region: 'sgp', prefix: 'no8xfe' };
 window.initAliyunCaptcha({ SceneId: '11xygtvd', mode: 'popup', element, button, ... });
 instance.startTracelessVerification();   // no slider: risk engine passes it silently
-// success(param) -> param.length ≈ 280
+// success(param) -> param.length ~= 280
 ```
 
-The result is byte-for-byte the same kind of param your own clicks produced, minted in about
-1.8 seconds, in the environment Aliyun already trusts. ZCode must be running (the bot starts
-it itself if needed), but you never touch it and no window interaction happens.
+The param is byte-for-byte the same kind your own clicks produced, minted in ~1.8s, inside the
+environment Aliyun already trusts. ZCode must be running (the bot starts it if needed), but
+you never touch it and no window interaction occurs.
 
 ### 3. The claim
 
 ```
 POST /api/v1/zcode-plan/billing/claim
-Content-Type: application/json
 X-Aliyun-Captcha-Verify-Param: <minted, single use>
 X-Aliyun-Captcha-Verify-Region: sgp
 {"plan_id":"zcode-v3-start-plan-0901-2"}
 ```
-
-Response codes, mapped from the app's own i18n table:
 
 | code | meaning | bot action |
 |---|---|---|
@@ -148,135 +213,115 @@ Response codes, mapped from the app's own i18n table:
 
 | file | responsibility |
 |---|---|
-| `src/index.mjs` | service loop: run a pass, compute next delay, sleep in slices |
-| `src/run-core.mjs` | one pass: fetch offers, diff against state, decide, claim, alert |
-| `src/schedule.mjs` | hot windows derived from real drop history, plus jitter |
-| `src/zcode-auth.mjs` | decrypt the JWT out of ZCode's credential store |
+| `src/index.mjs` | service loop: run a pass, compute delay, sleep in slices |
+| `src/run-core.mjs` | one pass: fetch offers, diff state, decide, claim, alert |
+| `src/schedule.mjs` | hot windows from real drop history, plus jitter |
+| `src/zcode-auth.mjs` | decrypt the JWT from ZCode's credential store |
 | `src/zcode-client.mjs` | preview / claim / client-configs with app parity headers |
+| `src/zcode-api.mjs` | endpoint and header definitions |
 | `src/cdp.mjs` | minimal Chrome DevTools Protocol client over raw WebSocket |
-| `src/captcha.mjs` | launch or attach to ZCode, mint a captcha param in its renderer |
+| `src/captcha.mjs` | attach to ZCode, mint a captcha param in its renderer |
 | `src/state.mjs` | durable JSON state (offers, hashes, budgets, backoffs) |
 | `src/telegram.mjs` | alerts |
-| `src/run-once.mjs` | single pass, for testing or a cron/task scheduler |
+| `src/run-once.mjs` | single pass, for testing or a task scheduler |
 
-Zero npm dependencies. Node 18+ (uses built in `fetch` and `WebSocket`).
+Zero npm dependencies: Node 18+ built-in `fetch` and `WebSocket`.
 
-### Detection and claiming are separate subsystems
+---
 
-They have independent cadences, independent budgets and independent failure modes. Detection
-is a cheap read only `GET`; claiming is rate limited, captcha gated and budgeted.
+## Detection vs claiming
 
-- **Detection** runs every 2 minutes in a hot window (or whenever an unclaimed offer is
-  live), and every 30 minutes otherwise, jittered 15 percent.
-- **Claiming** only fires on a transition: new plan id, changed content hash, re-listed
-  offer, or an elapsed exhaustion backoff. A poll that finds nothing new issues **zero**
-  claim requests.
+These are **separate subsystems** with independent cadences, budgets, and failure modes. This
+is the single most important design decision in the project.
 
-Verified on this machine: 6 polls produced exactly 1 claim attempt.
+```
+┌─ DETECTION (every ~2 min) ──────────┐   ┌─ CLAIM (gated, on demand) ──────────┐
+│ fetchPreview()  read-only GET       │   │ mint captcha via CDP                │
+│ hash plan_id + entitlements         │   │ POST /billing/claim {plan_id}       │
+│ diff vs data/state.json             │──▶│ fires only on a transition:         │
+│ emit: new / changed / re-listed /   │   │   new-offer · content-changed ·     │
+│       expired / unlisted / wait     │   │   re-listed · exhausted-retry       │
+│ no token spend, no captcha, no risk │   │ obeys spacing + daily budgets       │
+└─────────────────────────────────────┘   └─────────────────────────────────────┘
+```
 
-### Identity model (the part that prevents redundant claims)
+- **Detection** runs every 2 min in a hot window (or while an unclaimed offer is live), else
+  30 min, jittered 15%.
+- **Claiming** fires only on a transition. A poll that finds nothing new issues **zero** claim
+  requests.
+
+Measured on a live run: 7 polls produced 2 claim attempts.
+
+### Identity model
 
 A plan is keyed by two things, never by its display name:
 
-1. `plan_id`, the offer and wave identity. `zcode-v3-start-plan-0901-2` is September 1,
-   wave 2.
-2. A **content hash**:
-   `sha1(name + entitlements[entitlement_id | show_name | grant_units | period])`
+1. `plan_id`: the offer and wave identity. `zcode-v3-start-plan-0901-2` is Sep 1, wave 2.
+2. A **content hash**: `sha1(name + entitlements[entitlement_id | show_name | grant_units | period])`
 
 The hash matters because a wave re-open can reuse the same `plan_id` with refreshed quota.
 Same hash plus `1005` means "already handled, wait". A different hash is a genuine change and
-triggers a claim plus a `🔁 OFFER CHANGED` alert. Offers that vanish from preview are marked
-unlisted (paused wave, no claiming) and treated as a re-open if they come back.
+triggers a claim plus an `OFFER CHANGED` alert. Offers vanishing from preview are marked
+unlisted (paused wave, no claiming) and treated as a re-open if they return.
 
 ### Backoff, budgets, entropy
 
-Repeated `1005` (quota exhausted) backs off progressively, tuned to the observed wave gap of
-roughly 1 hour 41 minutes between wave 1 and wave 2 on September 1:
+Repeated `1005` backs off progressively, tuned to the observed ~1h41m wave gap:
 
 ```
 #1 ~4 min   #2 ~6.4 min   #3 ~10 min   #4 ~16 min   #5+ ~25 min (capped)
 ```
 
-Hard ceilings: **24 claim attempts per plan per day**, **60 global per day**, `429` triggers a
-global backoff of 15 then 30 then 60 minutes. Captcha rejection is retried with a freshly
-minted param and pauses the plan for 30 minutes after three failures.
+Ceilings: **24 attempts/plan/day**, **60 global/day**, `429` → global backoff 15 → 30 → 60 min.
+Captcha rejection re-mints and pauses the plan 30 min after three failures.
 
-To make the traffic look unmechanical rather than robotic:
+Entropy, so traffic is irregular rather than mechanical:
 
-- poll intervals jittered 15 percent
-- claim retry delays jittered 35 to 40 percent
-- a random 0.25 to 1.6 second pause precedes every request
-- a fresh UUID `X-Request-Id` and a fresh single use captcha param per attempt
+- poll intervals jittered 15%
+- claim retry delays jittered 35-40%
+- random 0.25-1.6s pause before every request
+- fresh UUID `X-Request-Id` and fresh single-use captcha param per attempt
 
-### Schedule, derived from actual drop history
+### Schedule, derived from real drop history
 
 | window (UTC) | why |
 |---|---|
-| Fri and Sat 15:30 to 17:45 | Weekend Build opens Saturday 00:00 Beijing, which is Friday 16:00 UTC (August 15, August 21) |
-| Sun 15:55 to 17:00 | second and third weekend day, plus the Monday 09:00 Beijing close |
-| daily 13:25 to 17:40 | surprise drops posted 13:54Z and 15:35Z on September 1 |
-| daily 20:30 to 23:59 | Beijing off peak 22:00 to 08:00 (UTC+8), where retries historically land |
-| daily 00:00 to 02:30 | the 10 PM ET / 7 PM PT burn deadline tail |
-| otherwise | 30 minute baseline |
+| Fri & Sat 15:30-17:45 | Weekend Build opens Sat 00:00 Beijing = Fri 16:00 UTC (Aug 15, Aug 21) |
+| Sun 15:55-17:00 | weekend day 2/3, plus Mon 09:00 Beijing close |
+| daily 13:25-17:40 | surprise drops posted 13:54Z and 15:35Z (Sep 1) |
+| daily 20:30-23:59 | Beijing off-peak 22:00-08:00 (UTC+8), where retries land |
+| daily 00:00-02:30 | 10 PM ET / 7 PM PT burn-deadline tail |
+| otherwise | 30 min baseline |
 
-All seven historical drop timestamps were checked against these windows and every one lands
-in a hot window, while a quiet Tuesday morning stays on the baseline.
+All seven historical drop timestamps fall inside a hot window; a quiet Tuesday morning stays
+on the baseline.
 
 ---
 
 ## Reverse engineering notes
 
-How the protocol was recovered, in case you need to redo it after an update:
+How the protocol was recovered, so you can redo it after an app update:
 
-1. `resources/app.asar` unpacked with `@electron/asar`. Main process code lives in
-   `out/main/` and `out/host/`, renderer in `out/renderer/assets/`.
-2. Grepped for `api/v1/` paths, which surfaced `zcode-plan/billing/{preview,claim}` and the
-   surrounding service methods `getManualClaimPlanPreviews` and `claimManualPlan`.
+1. Unpack `resources/app.asar` with `@electron/asar`. Main process code is in `out/main/` and
+   `out/host/`; renderer in `out/renderer/assets/`.
+2. Grep for `api/v1/` paths, which surfaces `zcode-plan/billing/{preview,claim}` and the
+   service methods `getManualClaimPlanPreviews` and `claimManualPlan`.
 3. Read the request builders to recover every header, the version constant (`gr` = `3.10.2`,
    confirmed against `out/metadata/build-meta.json`), and `X-Platform` (`win32-x64`).
 4. Credentials live in `~/.zcode/v2/credentials.json`, encrypted as
-   `enc:v1:<base64url(iv)>.<base64url(tag)>.<base64url(ciphertext)>` with AES-256-GCM. The key
-   is `sha256(ZCODE_CREDENTIAL_SECRET)` or, when that env var is absent,
+   `enc:v1:<base64url(iv)>.<base64url(tag)>.<base64url(ciphertext)>` with AES-256-GCM. Key is
+   `sha256(ZCODE_CREDENTIAL_SECRET)`, or absent that env var
    `sha256("zcode-credential-fallback:<platform>:<homedir>:<username>")`.
-5. Confirmed the live traffic by pointing the app at a local logging forwarder. ZCode resolves
-   its API origin from `ZCODE_PRODUCTION_BASE_URL`, so launching it with that environment
-   variable set redirects the app's own calls through a plain HTTP listener. No TLS
-   interception or CA installation needed. Several real Claim clicks were captured this way,
-   including the full captcha param and the `1005 quota exhausted` responses.
-6. Discovered the captcha is Aliyun 2.0 with a **traceless** mode
-   (`instance.startTracelessVerification()`), which is why the real app usually claims without
-   ever showing a slider, and why borrowing the param from the app works.
+5. Confirm live traffic by pointing the app at a local logging forwarder. ZCode resolves its
+   API origin from `ZCODE_PRODUCTION_BASE_URL`, so launching it with that variable set
+   redirects the app's own calls through a plain HTTP listener. No TLS interception, no CA
+   installation. Several real Claim clicks were captured this way, including the full captcha
+   param and the `1005` responses.
+6. The captcha is Aliyun 2.0 in **traceless** mode (`instance.startTracelessVerification()`),
+   which is why the real app usually claims with no slider, and why borrowing the param works.
 
-Capture evidence is in `reference-capture-log.jsonl`, which is gitignored because it contains
-your JWT and captcha params.
-
----
-
-## Setup
-
-```powershell
-cd path\to\zcode-claim-bot
-copy .env.example .env        # then fill in Telegram values
-node src\run-once.mjs        # single pass
-node src\index.mjs           # continuous
-```
-
-Requires Windows, Node 18+, and a ZCode desktop install that has been signed into at least
-once so the credentials file exists.
-
-### Telegram
-
-1. Message `@BotFather`, create a bot, copy the API token.
-2. Send your new bot any message.
-3. Fetch your chat id from `https://api.telegram.org/bot<TOKEN>/getUpdates`.
-4. Put both values in `.env`.
-
-### Autostart
-
-```powershell
-# from inside the repo folder:
-schtasks /Create /F /TN "ZCodeClaimBot" /SC ONLOGON /RL HIGHEST /TR '"powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "'"$(Resolve-Path .\start-bot.ps1)"'"'
-```
+Evidence is in `reference-capture-log.jsonl`, gitignored because it contains your JWT and real
+captcha params.
 
 ---
 
@@ -286,9 +331,9 @@ schtasks /Create /F /TN "ZCodeClaimBot" /SC ONLOGON /RL HIGHEST /TR '"powershell
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | | from BotFather |
 | `TELEGRAM_CHAT_ID` | | from `getUpdates` |
-| `ZCODE_EXE` | default install path | ZCode.exe location |
+| `ZCODE_EXE` | auto-detected | ZCode.exe location |
 | `ZCODE_CDP_PORT` | `9333` | port used to mint captchas |
-| `ZCODE_AUTO_LAUNCH` | `true` | set `false` to only claim when ZCode is already running |
+| `ZCODE_AUTO_LAUNCH` | `true` | `false` = only claim when ZCode is already running |
 | `POLL_IDLE_MINUTES` | `30` | baseline cadence |
 | `POLL_HOT_MINUTES` | `2` | cadence in hot windows |
 | `CLAIM_RETRY_TIMES` | `12` | attempts inside one claim burst |
@@ -301,22 +346,60 @@ schtasks /Create /F /TN "ZCodeClaimBot" /SC ONLOGON /RL HIGHEST /TR '"powershell
 
 ## Security
 
-- `.env` and `data/` are gitignored. **Never commit `.env`**, it contains your Telegram bot
-  token, which grants full control of the bot.
-- The credential file is never written to; the bot reads and decrypts it in memory each pass.
-- The ZCode JWT is read fresh on every cycle, so when the desktop app refreshes its session
-  the bot picks up the new token automatically.
-- The CDP debugging port is bound to `127.0.0.1` only, and it does allow local code execution
-  in the ZCode renderer while open. Treat it as a local-only debug surface.
+- `.env` and `data/` are gitignored. **Never commit `.env`**: it holds your Telegram bot token,
+  which grants full control of the bot. Telegram tokens pushed to public repos are scraped in
+  seconds.
+- The credential file is only ever read and decrypted in memory, never written.
+- The ZCode JWT is re-read every cycle, so app-side session refresh is picked up automatically.
+- The CDP debugging port binds to `127.0.0.1` only. It does permit local code execution in the
+  ZCode renderer while open, so treat it as a local-only debug surface.
+- CI fails the build if a Telegram token appears in tracked files.
+
+To harden further: run under a dedicated low-privilege Windows account and keep the repo
+private if you do not want your automation patterns public.
 
 ---
 
 ## Known limits
 
-- The bot depends on the Aliyun traceless path passing. If Z.ai changes the captcha to always
-  require interaction, claims will fail and you will get a Telegram notice, after which you
-  click the in-app card yourself.
-- The app version header is hardcoded to `3.10.2`. After a ZCode update, update it too or risk
+- The bot depends on the Aliyun traceless path passing. If Z.ai starts requiring interaction,
+  claims fail and you get a Telegram notice, after which you click the in-app card yourself.
+- The app version header is hardcoded to `3.10.2`. After a ZCode update, update it or risk
   `1004 ineligible`.
-- Detection is limited to what the preview endpoint exposes. An offer that is only announced
-  on social media and never published to the API will be missed.
+- Detection is limited to the preview endpoint. An offer announced only on social media and
+  never published to the API will be missed.
+- Single platform: Windows paths and the Electron launch path are Windows-specific.
+
+---
+
+## Contributing
+
+Issues and PRs are welcome, with two firm boundaries, given the ToS situation above:
+
+- **No multi-accounting, no claim sharing, no resale, no captcha forgery.** PRs adding those
+  will be rejected.
+- Keep the zero-dependency rule. Node built-ins only.
+
+```powershell
+node --check src\index.mjs     # syntax
+node src\run-once.mjs          # one pass, no side effects beyond a possible claim
+```
+
+CI runs on a self-hosted homelab runner on push and PR to `main`:
+
+```yaml
+runs-on: [self-hosted, homelab]
+if: github.actor == github.repository_owner
+```
+
+The owner guard exists because self-hosted runners execute arbitrary workflow code on real
+hardware; forks do not get to run jobs there.
+
+---
+
+## License
+
+[Unlicense](LICENSE): released into the public domain. Do anything you want with it.
+
+The license covers the code, not the consequences. Automating a third-party service may breach
+its terms and may get your account banned. That risk sits with whoever runs it.
