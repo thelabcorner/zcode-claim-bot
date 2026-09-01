@@ -50,12 +50,12 @@ it claims it for you, using your real logged-in account, then messages you on Te
 
 | | |
 |---|---|
-| ⚡ **Detection** | ~2 min during known drop windows, 30 min otherwise |
-| 🔐 **Auth** | your own ZCode JWT, read fresh every cycle |
-| 🧩 **Captcha** | minted by the real ZCode renderer over CDP (traceless) |
-| 📱 **Alerts** | new offer, wave change, claimed, exhausted, fault |
-| 🛡 **Budgets** | 24 attempts/plan/day, 60 global/day, progressive backoff |
-| 📦 **Deps** | zero npm packages, Node built-ins only |
+| **Detection** | ~2 min during known drop windows, 30 min otherwise |
+| **Auth** | your own ZCode JWT, read fresh every cycle |
+| **Captcha** | minted by the real ZCode renderer over CDP (traceless) |
+| **Alerts** | new offer, wave change, claimed, exhausted, fault |
+| **Budgets** | 24 attempts/plan/day, 60 global/day, progressive backoff |
+| **Deps** | zero npm packages, Node built-ins only |
 
 ---
 
@@ -196,16 +196,16 @@ X-Aliyun-Captcha-Verify-Region: sgp
 
 | code | meaning | bot action |
 |---|---|---|
-| `0` | claimed | ✅ Telegram, mark terminal |
+| `0` | claimed | SUCCESS: Telegram, mark terminal |
 | `1001` | plan not found | stop |
-| `1002` | offer ended / unavailable | ❌ terminal |
+| `1002` | offer ended / unavailable | TERMINAL |
 | `1003` | already claimed | terminal |
-| `1004` | account or client version ineligible | ❌ terminal (usually a stale app version) |
-| `1005` | quota exhausted | ⏳ keep watching, waves refill |
+| `1004` | account or client version ineligible | TERMINAL (usually a stale app version) |
+| `1005` | quota exhausted | RETRY: keep watching, waves refill |
 | `3001` | invalid request | stop |
 | `3007` | captcha rejected | re-mint, pause after 3 |
-| `401` | token expired | ⚠️ Telegram: sign in once |
-| `429` | rate limited | global backoff 15 → 30 → 60 min |
+| `401` | token expired | ACTION NEEDED: Telegram, sign in once |
+| `429` | rate limited | global backoff 15 -> 30 -> 60 min |
 
 ---
 
@@ -272,7 +272,7 @@ Repeated `1005` backs off progressively, tuned to the observed ~1h41m wave gap:
 #1 ~4 min   #2 ~6.4 min   #3 ~10 min   #4 ~16 min   #5+ ~25 min (capped)
 ```
 
-Ceilings: **24 attempts/plan/day**, **60 global/day**, `429` → global backoff 15 → 30 → 60 min.
+Ceilings: **24 attempts/plan/day**, **60 global/day**, `429` -> global backoff 15 -> 30 -> 60 min.
 Captcha rejection re-mints and pauses the plan 30 min after three failures.
 
 Entropy, so traffic is irregular rather than mechanical:

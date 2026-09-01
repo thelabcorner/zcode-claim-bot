@@ -14,7 +14,7 @@ jobs:
     runs-on: [self-hosted, homelab]
     if: github.actor == github.repository_owner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Runtime versions
         run: node --version
@@ -35,6 +35,14 @@ jobs:
           # the real token must never live in this file; match by shape only
           if grep -rIEq "$TOKEN_RE" --exclude-dir=.git .; then
             echo "::error::telegram bot token found in tracked files"
+            exit 1
+          fi
+          echo "clean"
+
+      - name: Docs stay emoji-free
+        run: |
+          if grep -rlP '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]' README.md; then
+            echo "::error::emoji found in README.md"
             exit 1
           fi
           echo "clean"
