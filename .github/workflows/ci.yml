@@ -28,9 +28,13 @@ jobs:
         run: node -e "import('./src/config.mjs').then(()=>console.log('config ok'))"
 
       - name: No committed secrets
+        env:
+          # shape of a Telegram bot token: <digits>:<35 chars of A-Za-z0-9_->
+          TOKEN_RE: '[0-9]{8,12}:[A-Za-z0-9_-]{35}'
         run: |
-          if grep -rIEq '8901932867|AAE61OIb71BLaXQIOeVep2v27HqWREMrd2o' --exclude-dir=.git .; then
-            echo "::error::telegram token found in tracked files"
+          # the real token must never live in this file; match by shape only
+          if grep -rIEq "$TOKEN_RE" --exclude-dir=.git .; then
+            echo "::error::telegram bot token found in tracked files"
             exit 1
           fi
           echo "clean"
