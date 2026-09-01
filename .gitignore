@@ -1,0 +1,15 @@
+# secrets
+.env
+*.env
+!.env.example
+
+# runtime state (contains offerings + claim history; no secrets but keeps repo clean)
+data/
+*.log
+
+# captures from the reverse-engineering session (contain real JWT + captcha params)
+reference-capture-log.jsonl
+
+node_modules/
+.DS_Store
+Thumbs.db

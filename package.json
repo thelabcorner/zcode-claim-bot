@@ -1,0 +1,11 @@
+{
+  "name": "zcode-claim-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "once": "node src/run-once.mjs"
+  },
+  "dependencies": {}
+}
